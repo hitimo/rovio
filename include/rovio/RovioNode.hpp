@@ -45,6 +45,7 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <std_srvs/Empty.h>
+#include <std_msgs/Float64.h>
 #include <tf/transform_broadcaster.h>
 #include <visualization_msgs/Marker.h>
 
@@ -146,6 +147,7 @@ class RovioNode{
   ros::Publisher pubMarkers_;          /**<Publisher: Ros line marker, indicating the depth uncertainty of a landmark.*/
   ros::Publisher pubExtrinsics_[mtState::nCam_];
   ros::Publisher pubImuBias_;
+  ros::Publisher pubProcTimes_;
 
   // Ros Messages
   geometry_msgs::TransformStamped transformMsg_;
@@ -157,6 +159,7 @@ class RovioNode{
   sensor_msgs::PointCloud2 patchMsg_;
   visualization_msgs::Marker markerMsg_;
   sensor_msgs::Imu imuBiasMsg_;
+  std_msgs::Float64 procTimesMsg_;
   int msgSeq_;
 
   // Rovio outputs and coordinate transformations
@@ -229,6 +232,7 @@ class RovioNode{
       pubExtrinsics_[camID] = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("rovio/extrinsics" + std::to_string(camID), 1 );
     }
     pubImuBias_ = nh_.advertise<sensor_msgs::Imu>("rovio/imu_biases", 1 );
+    pubProcTimes_ = nh_.advertise<std_msgs::Float64>("rovio/proc_times", 1 );
 
     // Handle coordinate frame naming
     map_frame_ = "/map";
@@ -261,6 +265,8 @@ class RovioNode{
     for(int i=0;i<9;i++){
       imuBiasMsg_.orientation_covariance[i] = 0.0;
     }
+
+    procTimesMsg_.data = 0.0;
 
     // PointCloud message.
     pclMsg_.header.frame_id = imu_frame_;
@@ -646,6 +652,7 @@ class RovioNode{
       int c2 = std::get<0>(mpFilter_->updateTimelineTuple_).measMap_.size();
       timing_T += (t2-t1)/cv::getTickFrequency()*1000;
       timing_C += c1-c2;
+      float proc_time = timing_T/timing_C;
       bool plotTiming = false;
       if(plotTiming){
         ROS_INFO_STREAM(" == Filter Update: " << (t2-t1)/cv::getTickFrequency()*1000 << " ms for processing " << c1-c2 << " images, average: " << timing_T/timing_C);
@@ -863,6 +870,10 @@ class RovioNode{
           }
           pubImuBias_.publish(imuBiasMsg_);
         }
+
+        // Publish processing times (always)
+        procTimesMsg_.data = proc_time;
+        pubProcTimes_.publish(procTimesMsg_);
 
         // PointCloud message.
         if(pubPcl_.getNumSubscribers() > 0 || pubMarkers_.getNumSubscribers() > 0 || forcePclPublishing_ || forceMarkersPublishing_){
